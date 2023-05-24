@@ -1,0 +1,93 @@
+/*
+ * Copyright (C) 2023, HENSOLDT Cyber GmbH
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#pragma once
+
+import <std_connector.camkes>;
+
+#include <if_OS_Nic.camkes>
+import <if_OS_Logger.camkes>;
+
+
+// NIC configuration flags
+#define NIC_CONFIG_FORCE_MAC            (1 << 0)
+#define NIC_CONFIG_PROMISCUOUS_MODE     (1 << 1)
+#define NIC_CONFIG_DROP_FRAME_CRC       (1 << 2)
+
+// platforms may have specific imports and components
+#include "plat_nic_zynq.camkes"
+HARDWARE_ETHERNET_EXTRA_IMPORTS
+HARDWARE_ETHERNET_COMPONENT
+
+
+//------------------------------------------------------------------------------
+component NIC_ZYNQ {
+
+    control;
+
+    // We can't just use the macro single_threaded_component() here due to an
+    // include quirk in the global components. The module BenchUtilz includes
+    // the TimeServer from the global components, which causes a name clash with
+    // our TimeServer implementation, that uses the same component name. Thus,
+    // we put the macro contents here.
+    attribute int single_threaded = 1;
+    maybe consumes Trace trace_start;
+    maybe consumes Trace trace_stop;
+    // end of things from single_threaded_component()
+
+    IF_OS_NIC_PROVIDE(nic, NIC_DRIVER_RINGBUFFER_SIZE)
+
+    // optional connection to the LogServer
+    maybe uses      if_OS_Logger            logServer_rpc;
+    maybe dataport  Buf                     logServer_port;
+
+    HARDWARE_ETHERNET_INTERFACES
+
+    composition {
+        HARDWARE_ETHERNET_COMPOSITION
+    }
+
+    configuration {
+        HARDWARE_ETHERNET_CONFIG
+    }
+};
+
+
+//------------------------------------------------------------------------------
+// Internal driver configuration. No system should ever have the need to modify
+// this unless it changes the DMA settings.
+//
+// DMA Memory requirements:
+//   RX Buffers          524288 bytes (256 * 2048)
+//   TX Buffers          262144 bytes (128 * 2048)
+//   RX Descriptor Ring    1024 bytes (128 *    8)
+//   TX Descriptor Ring    1024 bytes (128 *    8)
+//   ----------------------------------------------
+//   Total               788480 bytes (= 0xC0800)
+//
+#define NIC_ZYNQ_MEMORY_CONFIG(_nic_) \
+    _nic_.simple = true;             \
+    _nic_.cnode_size_bits = 12;      \
+    _nic_.simple_untyped20_pool = 2; \
+    _nic_.heap_size = 0x10000;       \
+    _nic_.dma_pool = 0xC2000; /* align up to a multiple of pages */
+
+
+// #define NIC_ZYNQMP_CONFIG(_nic_) \
+//     _nic_.irq_irq_number = 95;                                    \
+//     _nic_.EthDriver_paddr = 0xFF0E0000;                           \
+//     _nic_.EthDriver_size = 0x1000;
+
+//------------------------------------------------------------------------------
+// Connect a LogServer to the NIC
+#define NIC_ZYNQ_INSTANCE_CONNECT_OPTIONAL_LOGGER(_nic_, _logserver_) \
+    \
+    connection seL4RPCCall conn_ ## _nic_ ## _ ## _logserver_ ## _rpc( \
+        from _nic_.logServer_rpc, \
+        to   _logserver_.logServer_rpc); \
+    \
+    connection seL4SharedData  conn_ ## _nic_ ## _ ## _logserver_ ## _port( \
+        from  _nic_.logServer_port, \
+        to    _logserver_.nwDriver_port);

@@ -1,0 +1,46 @@
+/*
+ * Xilinx Zynq NIC driver, ZynqMP configuration
+ *
+ * Copyright (C) 2023, HENSOLDT Cyber GmbH
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+#pragma once
+
+import <std_connector.camkes>;
+import <global-connectors.camkes>;
+
+#include <camkes-fdt-bind-driver.h>
+
+
+#define DTB_ZYNQ_PATH_ENET1 "/amba/ethernet@ff0e0000"
+
+
+#define NIC_ZYNQ_INSTANCE(_nic_) \
+    component NIC_ZYNQ _nic_;
+
+
+#define HARDWARE_ETHERNET_EXTRA_IMPORTS         /* nothing needed */
+#define HARDWARE_ETHERNET_COMPONENT             /* nothing needed */
+
+
+#define HARDWARE_ETHERNET_INTERFACES                                    \
+    consumes Dummy enet;                                                \
+    emits Dummy dummy_source;                                           \
+    fdt_bind_drivers_interfaces([DTB_ZYNQ_PATH_ENET1]);
+
+
+#define DTB_ETH_HW_MAPPING_CONNECTION(_dst_) \
+    connection seL4DTBHardwareThreadless conn_eth_ ## _dst_( \
+        from dummy_source, \
+        to _dst_)
+
+
+#define HARDWARE_ETHERNET_COMPOSITION                                             \
+    DTB_ETH_HW_MAPPING_CONNECTION(enet);                                          \
+    fdt_bind_driver_connections();
+
+
+#define HARDWARE_ETHERNET_CONFIG                                        \
+    enet.generate_interrupts = 1;                                       \
+    enet.dtb = dtb({"path":DTB_ZYNQ_PATH_ENET1});
